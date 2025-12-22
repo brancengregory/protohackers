@@ -1,7 +1,7 @@
-use std::thread;
-use std::net::{TcpListener, TcpStream};
-use std::io::{Read, Write, BufReader, BufWriter, Error};
 use std::collections::BTreeMap;
+use std::io::{BufReader, BufWriter, Error, Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::thread;
 
 // Need to know what client we are dealing with
 // and hash it into some kind of session identifier
@@ -60,7 +60,7 @@ enum MessageType {
 #[derive(Debug)]
 struct Message {
     kind: MessageType,
-    content: (i32, i32)
+    content: (i32, i32),
 }
 
 impl TryFrom<&[u8]> for Message {
@@ -75,44 +75,59 @@ impl TryFrom<&[u8]> for Message {
         let message_kind = match b[0] {
             b'I' => MessageType::Insert,
             b'Q' => MessageType::Query,
-            _ => return Err("First byte must be 'I' or 'Q'")
+            _ => return Err("First byte must be 'I' or 'Q'"),
         };
 
-        let a = i32::from_be_bytes(raw_content[1..5].try_into().expect("Couldn't turn subset of raw content into array"));
-        let b = i32::from_be_bytes(raw_content[5..9].try_into().expect("Couldn't turn subset of raw content into array"));
+        let a = i32::from_be_bytes(
+            raw_content[1..5]
+                .try_into()
+                .expect("Couldn't turn subset of raw content into array"),
+        );
+        let b = i32::from_be_bytes(
+            raw_content[5..9]
+                .try_into()
+                .expect("Couldn't turn subset of raw content into array"),
+        );
 
         Ok(Message {
             kind: message_kind,
-            content: (a, b)
+            content: (a, b),
         })
     }
 }
 
-fn handle_insert(message_data: &(i32, i32), client_data: &mut BTreeMap<i32, i32>) -> Result<Option<i32>, Error> {
+fn handle_insert(
+    message_data: &(i32, i32),
+    client_data: &mut BTreeMap<i32, i32>,
+) -> Result<Option<i32>, Error> {
     client_data.insert(message_data.0, message_data.1);
     Ok(None)
 }
 
-fn handle_query(message_data: &(i32, i32), client_data: &mut BTreeMap<i32, i32>) -> Result<Option<i32>, Error> {
+fn handle_query(
+    message_data: &(i32, i32),
+    client_data: &mut BTreeMap<i32, i32>,
+) -> Result<Option<i32>, Error> {
     if message_data.0 > message_data.1 {
         return Ok(Some(0));
     }
 
-    let (count, sum) = client_data.range(message_data.0..=message_data.1)
+    let (count, sum) = client_data
+        .range(message_data.0..=message_data.1)
         .fold((0i64, 0i64), |(c, s), (_, &price)| {
             (c + 1, s + price as i64)
         });
 
-    let mean = if count == 0 {
-        0
-    } else {
-        sum / count
-    };
+    let mean = if count == 0 { 0 } else { sum / count };
 
     Ok(Some(mean as i32))
 }
 
-fn handle_request(request: &[u8], writer: &mut BufWriter<TcpStream>, client_data: &mut BTreeMap<i32, i32>) -> std::io::Result<()> {
+fn handle_request(
+    request: &[u8],
+    writer: &mut BufWriter<TcpStream>,
+    client_data: &mut BTreeMap<i32, i32>,
+) -> std::io::Result<()> {
     let message = Message::try_from(request).map_err(std::io::Error::other)?;
 
     let res = match &message.kind {
@@ -124,8 +139,8 @@ fn handle_request(request: &[u8], writer: &mut BufWriter<TcpStream>, client_data
         Ok(Some(n)) => {
             writer.write_all(&n.to_be_bytes())?;
             writer.flush()?;
-        },
-        Ok(None) => {},
+        }
+        Ok(None) => {}
         Err(e) => eprintln!("Failed to respond to message: {}", e),
     }
 
@@ -133,7 +148,9 @@ fn handle_request(request: &[u8], writer: &mut BufWriter<TcpStream>, client_data
 }
 
 fn handle_client(stream: TcpStream) {
-    let write_stream = stream.try_clone().expect("Couldn't clone stream for writing");
+    let write_stream = stream
+        .try_clone()
+        .expect("Couldn't clone stream for writing");
 
     let mut reader = BufReader::new(stream);
     let mut writer = BufWriter::new(write_stream);
@@ -146,31 +163,30 @@ fn handle_client(stream: TcpStream) {
         match reader.read_exact(&mut buffer) {
             Ok(_) => {
                 if let Err(e) = handle_request(&buffer, &mut writer, &mut client_data) {
-										eprintln!("Failed to handle request: {}", e);
-										break;
-								}
-            },
+                    eprintln!("Failed to handle request: {}", e);
+                    break;
+                }
+            }
             Err(_) => break,
-
         }
     }
 }
 
 fn main() -> std::io::Result<()> {
-	let listener = TcpListener::bind("0.0.0.0:8080")?;
+    let listener = TcpListener::bind("0.0.0.0:8080")?;
 
-	for stream in listener.incoming() {
-		match stream {
-			Ok(stream) => {
-				thread::spawn(move || {
-					handle_client(stream);
-				});
-			}
-			Err(e) => {
-				eprintln!("Connection failed: {}", e);
-			}
-		}
-	}
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                thread::spawn(move || {
+                    handle_client(stream);
+                });
+            }
+            Err(e) => {
+                eprintln!("Connection failed: {}", e);
+            }
+        }
+    }
 
-	Ok(())
+    Ok(())
 }
