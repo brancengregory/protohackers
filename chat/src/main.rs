@@ -140,14 +140,12 @@ fn main() -> std::io::Result<()> {
                     let id = id_counter;
                     id_counter += 1;
 
-                    let members: String = clients.values()
-                        .map(|x| {
-                            x.name.clone()
-                        })
-                        .reduce(|x, y| {
-                            format!("{}, {}", x, y)
-                        })
-                        .unwrap_or("...just you it seems...".to_string());
+										let names: Vec<&str> = clients.values().map(|c| c.name.as_str()).collect();
+										let members = if names.is_empty() {
+												"...just you it seems...".to_string()
+										} else {
+												names.join(", ")
+										};
 
                     sender.send(ClientMessage::Welcome { id, members }).unwrap();
                     clients.insert(id, Client { name: name.clone(), sender });
