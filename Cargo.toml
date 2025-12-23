@@ -4,4 +4,4 @@ members = ["chat", "database",
   "echo",
 	"prices",
   "prime"
-]
+, "proxy"]
