@@ -1,13 +1,12 @@
-use std::io::{BufReader, BufWriter, BufRead, Write, Error, ErrorKind};
-use std::net::{TcpListener, TcpStream};
-use std::thread;
 use crossbeam_channel::{Sender, unbounded};
 use std::collections::HashMap;
-
+use std::io::{BufRead, BufReader, BufWriter, Error, ErrorKind, Write};
+use std::net::{TcpListener, TcpStream};
+use std::thread;
 
 enum ClientMessage {
     Welcome { id: usize, members: String },
-    Text(String)
+    Text(String),
 }
 
 #[derive(Debug)]
@@ -17,21 +16,29 @@ struct ChatMessage {
 }
 
 enum Event {
-    Join { name: String, sender: Sender<ClientMessage> },
+    Join {
+        name: String,
+        sender: Sender<ClientMessage>,
+    },
     Message(ChatMessage),
-    Leave { id: usize },
+    Leave {
+        id: usize,
+    },
 }
 
 struct Client {
     name: String,
-    sender: Sender<ClientMessage>
+    sender: Sender<ClientMessage>,
 }
 
 fn is_alphanumeric(text: &str) -> bool {
     text.chars().all(|t| char::is_alphanumeric(t))
 }
 
-fn handle_invite(reader: &mut BufReader<TcpStream>, writer: &mut BufWriter<TcpStream>) -> Result<String, std::io::Error> {
+fn handle_invite(
+    reader: &mut BufReader<TcpStream>,
+    writer: &mut BufWriter<TcpStream>,
+) -> Result<String, std::io::Error> {
     let invite_message = "Welcome to budgetchat! What shall I call you?\n";
     writer.write_all(invite_message.as_bytes())?;
     writer.flush()?;
@@ -45,12 +52,12 @@ fn handle_invite(reader: &mut BufReader<TcpStream>, writer: &mut BufWriter<TcpSt
                 if formatted_name.is_empty() || !is_alphanumeric(&formatted_name) {
                     return Err(Error::new(
                         ErrorKind::InvalidInput,
-                        "Name cannot be empty, and must be alphanumeric"
+                        "Name cannot be empty, and must be alphanumeric",
                     ));
                 } else {
-                    return Ok(client_name.trim().to_string())
+                    return Ok(client_name.trim().to_string());
                 }
-            },
+            }
             Err(e) => return Err(e),
         }
     }
@@ -69,15 +76,17 @@ fn handle_client(stream: TcpStream, broker_tx: Sender<Event>) {
         Err(e) => {
             eprintln!("Couldn't set client name: {}", e);
             return;
-        },
+        }
     };
 
     let (client_tx, client_rx) = unbounded::<ClientMessage>();
 
-    broker_tx.send(Event::Join {
-        name: client_name.clone(),
-        sender: client_tx
-    }).unwrap();
+    broker_tx
+        .send(Event::Join {
+            name: client_name.clone(),
+            sender: client_tx,
+        })
+        .unwrap();
 
     let client_id = match client_rx.recv().unwrap() {
         ClientMessage::Welcome { id, members } => {
@@ -85,11 +94,11 @@ fn handle_client(stream: TcpStream, broker_tx: Sender<Event>) {
             let _ = writeln!(writer, "* The room contains: {} *", members);
             let _ = writer.flush();
             id
-        },
+        }
         _ => {
             eprintln!("Protocol mismatch. No welcome completed yet.");
             return;
-        },
+        }
     };
 
     let broker_tx_clone = broker_tx.clone();
@@ -103,17 +112,17 @@ fn handle_client(stream: TcpStream, broker_tx: Sender<Event>) {
                 Ok(_) => {
                     let content = buffer.trim().to_string();
                     if !content.is_empty() {
-                        broker_tx_clone.send(Event::Message(ChatMessage {
-                            client_id,
-                            content,
-                        })).unwrap();
+                        broker_tx_clone
+                            .send(Event::Message(ChatMessage { client_id, content }))
+                            .unwrap();
                     }
-
-                },
+                }
                 Err(_) => break,
             }
         }
-        broker_tx_clone.send(Event::Leave { id: client_id }).unwrap();
+        broker_tx_clone
+            .send(Event::Leave { id: client_id })
+            .unwrap();
     });
 
     for msg in client_rx {
@@ -140,33 +149,43 @@ fn main() -> std::io::Result<()> {
                     let id = id_counter;
                     id_counter += 1;
 
-										let names: Vec<&str> = clients.values().map(|c| c.name.as_str()).collect();
-										let members = if names.is_empty() {
-												"...just you it seems...".to_string()
-										} else {
-												names.join(", ")
-										};
+                    let names: Vec<&str> = clients.values().map(|c| c.name.as_str()).collect();
+                    let members = if names.is_empty() {
+                        "...just you it seems...".to_string()
+                    } else {
+                        names.join(", ")
+                    };
 
                     sender.send(ClientMessage::Welcome { id, members }).unwrap();
-                    clients.insert(id, Client { name: name.clone(), sender });
+                    clients.insert(
+                        id,
+                        Client {
+                            name: name.clone(),
+                            sender,
+                        },
+                    );
 
                     let announcement = format!("* {} has entered the room", name);
                     for (client_id, client) in &clients {
                         if *client_id != id {
-                            let _ = client.sender.send(ClientMessage::Text(announcement.clone()));
+                            let _ = client
+                                .sender
+                                .send(ClientMessage::Text(announcement.clone()));
                         }
                     }
-                },
+                }
                 Event::Message(message) => {
                     if let Some(client_info) = clients.get(&message.client_id) {
                         let formatted_msg = format!("[{}] {}", client_info.name, message.content);
                         for (client_id, client) in &clients {
                             if *client_id != message.client_id {
-                                let _ = client.sender.send(ClientMessage::Text(formatted_msg.clone()));
+                                let _ = client
+                                    .sender
+                                    .send(ClientMessage::Text(formatted_msg.clone()));
                             }
                         }
                     }
-                },
+                }
                 Event::Leave { id } => {
                     println!("Client {} left", id);
                     let name = clients.get(&id).unwrap().name.clone();
@@ -174,9 +193,11 @@ fn main() -> std::io::Result<()> {
 
                     let announcement = format!("* {} has left the room", name);
                     for (_, client) in &clients {
-                        let _ = client.sender.send(ClientMessage::Text(announcement.clone()));
+                        let _ = client
+                            .sender
+                            .send(ClientMessage::Text(announcement.clone()));
                     }
-                },
+                }
             }
         }
     });
