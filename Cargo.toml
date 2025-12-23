@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["chat",
+members = ["chat", "database",
   "echo",
 	"prices",
   "prime"
