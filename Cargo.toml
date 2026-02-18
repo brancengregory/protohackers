@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["chat", "database",
-  "echo", "flock",
+  "echo", "flock", "lrcp",
 	"prices",
   "prime"
 , "proxy"]
